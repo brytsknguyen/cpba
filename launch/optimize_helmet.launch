@@ -1,0 +1,16 @@
+<launch>
+
+    <arg name="bag_file" default="/home/tmn/cpba/aprial_tag_helmet_05.bag"/>
+
+    <!-- Optimization node -->
+    <node pkg="cpba" type="cpba_datasync" name="cpba_datasync" output="screen" >
+        <param name="bag_file" type="string"  value="$(arg bag_file)"/>
+    </node>
+    
+    <!-- Launch the rviz node-->
+    <node pkg="rviz" type="rviz" name="rviz_cpba" args="-d $(find cpba)/launch/helmet.rviz" />
+
+    <node pkg="tf2_ros" type="static_transform_publisher"
+         name="world_vio_init_pub" args="0 0 0 0 0 0 1 world slam_init" />  
+
+</launch>
