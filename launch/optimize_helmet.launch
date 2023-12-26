@@ -4,8 +4,10 @@
 
     <!-- Optimization node -->
     <node pkg="cpba" type="cpba_datasync" name="cpba_datasync" output="screen" >
-        <param name="bag_file"           type="string" value="$(arg bag_file)"/>
-        <param name="tag_time_tolerance" type="double" value="0.02"/>
+        <param name="bag_file" type="string" value="$(arg bag_file)"/>
+        <param name="odom_tag_time_tolerance" type="double" value="0.02"/>
+        <param name="cluster_timeout" type="double" value="2.0"/>
+        <param name="outlier_thres" type="double" value="0.4"/>
     </node>
     
     <!-- Launch the rviz node-->

@@ -94,7 +94,7 @@
 // #include <sophus/se3.hpp>
 
 // Ceres
-// #include <ceres/ceres.h>
+#include <ceres/ceres.h>
 
 using namespace std;
 using namespace Eigen;
@@ -486,6 +486,12 @@ struct myTf
         return atan2(rot.x()*rot.y() + rot.w()*rot.z(), 0.5 - (rot.y()*rot.y() + rot.z()*rot.z()))/M_PI*180.0;
     }
 
+    Matrix<T, 3, 1> SO3Log()
+    {
+        Eigen::AngleAxis<T> phi(rot);
+        return phi.angle()*phi.axis();
+    }
+
     myTf inverse() const
     {
         Eigen::Transform<T, 3, Eigen::TransformTraits::Affine> transform_inv = this->transform().inverse();
@@ -525,6 +531,31 @@ typedef myTf<> mytf;
 
 namespace Util
 {
+    inline void ComputeCeresCost(vector<ceres::internal::ResidualBlock *> &res_ids,
+                          double &cost, ceres::Problem &problem)
+    {
+        if (res_ids.size() == 0)
+        {
+            cost = -1;
+            return;
+        }
+
+        ceres::Problem::EvaluateOptions e_option;
+        e_option.residual_blocks = res_ids;
+        e_option.num_threads = omp_get_max_threads();
+        problem.Evaluate(e_option, &cost, NULL, NULL, NULL);
+    }
+
+    inline void MergeVector(vector<int> &vecA, vector<int> &vecB)
+    {
+        std::sort(vecA.begin(), vecA.end());
+        std::sort(vecB.begin(), vecB.end());
+        vector<int> vecTemp = vector<int>(vecA.size() + vecB.size());
+        vector<int>::iterator it = std::set_union(vecA.begin(), vecA.end(), vecB.begin(), vecB.end(), vecTemp.begin());
+        vecTemp.resize(it - vecTemp.begin());
+        vecA = vecTemp;
+    }
+
     template <typename PointType>
     sensor_msgs::PointCloud2 publishCloud(ros::Publisher &thisPub,
                                           pcl::PointCloud<PointType> &thisCloud,
@@ -539,7 +570,7 @@ namespace Util
         return tempCloud;
     }
 
-    float wrapTo360(float angle)
+    inline float wrapTo360(float angle)
     {
         angle = fmod(angle, 360);
         if (angle < 0)
@@ -547,7 +578,7 @@ namespace Util
         return angle;
     }
 
-    double wrapTo180(double angle)
+    inline double wrapTo180(double angle)
     {
         angle = fmod(angle + 180,360);
         if (angle < 0)
@@ -556,19 +587,25 @@ namespace Util
     }
 
     template <typename PoinT>
-    float pointDistance(PoinT p)
+    inline float pointDistance(PoinT p)
     {
         return sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
     }
 
+    template <typename PoinT>
+    inline float pointDistanceSq(PoinT p)
+    {
+        return p.x * p.x + p.y * p.y + p.z * p.z;
+    }
+
     template <typename Derived>
-    typename Derived::Scalar angleDiff(const Eigen::QuaternionBase<Derived> &q1, const Eigen::QuaternionBase<Derived> &q2)
+    inline typename Derived::Scalar angleDiff(const Eigen::QuaternionBase<Derived> &q1, const Eigen::QuaternionBase<Derived> &q2)
     {
         return (Eigen::AngleAxis<typename Derived::Scalar>(q1.inverse()*q2).angle()*180.0/M_PI);
     }
 
     template <typename Derived>
-    Eigen::Quaternion<typename Derived::Scalar> deltaQ(const Eigen::MatrixBase<Derived> &theta)
+    inline Eigen::Quaternion<typename Derived::Scalar> QExp(const Eigen::MatrixBase<Derived> &theta)
     {
         typedef typename Derived::Scalar Scalar_t;
 
@@ -576,7 +613,7 @@ namespace Util
 
         Scalar_t theta_nrm = theta.norm();
 
-        if (theta_nrm < 1e-5)
+        if (theta_nrm < 1e-9)
         {
             Eigen::Matrix<Scalar_t, 3, 1> half_theta = theta;
             half_theta /= static_cast<Scalar_t>(2.0);
@@ -600,8 +637,15 @@ namespace Util
         return dq;
     }
 
+    template <typename T>
+    inline Eigen::Matrix<T, 3, 1> QLog(const Eigen::Quaternion<T> &q)
+    {
+        Eigen::AngleAxis<T> phi(q);
+        return phi.axis()*phi.angle();
+    }
+
     template <typename Derived>
-    Eigen::Matrix<typename Derived::Scalar, 3, 3> skewSymmetric(const Eigen::MatrixBase<Derived> &q)
+    inline Eigen::Matrix<typename Derived::Scalar, 3, 3> skewSymmetric(const Eigen::MatrixBase<Derived> &q)
     {
         Eigen::Matrix<typename Derived::Scalar, 3, 3> ans;
         ans << typename Derived::Scalar(0), -q(2), q(1),
@@ -610,20 +654,20 @@ namespace Util
         return ans;
     }
 
-    template <typename Derived>
-    Eigen::Quaternion<typename Derived::Scalar> positify(const Eigen::QuaternionBase<Derived> &q)
-    {
-        //printf("a: %f %f %f %f", q.w(), q.x(), q.y(), q.z());
-        //Eigen::Quaternion<typename Derived::Scalar> p(-q.w(), -q.x(), -q.y(), -q.z());
-        //printf("b: %f %f %f %f", p.w(), p.x(), p.y(), p.z());
-        //return q.template w() >= (typename Derived::Scalar)(0.0) ? q : Eigen::Quaternion<typename Derived::Scalar>(-q.w(), -q.x(), -q.y(), -q.z());
-        return q;
-    }
+    // template <typename Derived>
+    // inline Eigen::Quaternion<typename Derived::Scalar> positify(const Eigen::QuaternionBase<Derived> &q)
+    // {
+    //     //printf("a: %f %f %f %f", q.w(), q.x(), q.y(), q.z());
+    //     //Eigen::Quaternion<typename Derived::Scalar> p(-q.w(), -q.x(), -q.y(), -q.z());
+    //     //printf("b: %f %f %f %f", p.w(), p.x(), p.y(), p.z());
+    //     //return q.template w() >= (typename Derived::Scalar)(0.0) ? q : Eigen::Quaternion<typename Derived::Scalar>(-q.w(), -q.x(), -q.y(), -q.z());
+    //     return q;
+    // }
 
     template <typename Derived>
-    Eigen::Matrix<typename Derived::Scalar, 4, 4> Qleft(const Eigen::QuaternionBase<Derived> &q)
+    inline Eigen::Matrix<typename Derived::Scalar, 4, 4> Qleft(const Eigen::QuaternionBase<Derived> &q)
     {
-        Eigen::Quaternion<typename Derived::Scalar> qq = positify(q);
+        Eigen::Quaternion<typename Derived::Scalar> qq(q);
         Eigen::Matrix<typename Derived::Scalar, 4, 4> ans;
         ans(0, 0) = qq.w(), ans.template block<1, 3>(0, 1) = -qq.vec().transpose();
         ans.template block<3, 1>(1, 0) = qq.vec(), ans.template block<3, 3>(1, 1) = qq.w() * Eigen::Matrix<typename Derived::Scalar, 3, 3>::Identity() + skewSymmetric(qq.vec());
@@ -631,16 +675,16 @@ namespace Util
     }
 
     template <typename Derived>
-    Eigen::Matrix<typename Derived::Scalar, 4, 4> Qright(const Eigen::QuaternionBase<Derived> &p)
+    inline Eigen::Matrix<typename Derived::Scalar, 4, 4> Qright(const Eigen::QuaternionBase<Derived> &p)
     {
-        Eigen::Quaternion<typename Derived::Scalar> pp = positify(p);
+        Eigen::Quaternion<typename Derived::Scalar> pp(p);
         Eigen::Matrix<typename Derived::Scalar, 4, 4> ans;
         ans(0, 0) = pp.w(), ans.template block<1, 3>(0, 1) = -pp.vec().transpose();
         ans.template block<3, 1>(1, 0) = pp.vec(), ans.template block<3, 3>(1, 1) = pp.w() * Eigen::Matrix<typename Derived::Scalar, 3, 3>::Identity() - skewSymmetric(pp.vec());
         return ans;
     }
 
-    Eigen::Matrix3d SO3Jright(const Eigen::AngleAxis<double> &phi)
+    inline Eigen::Matrix3d SO3Jright(const Eigen::AngleAxis<double> &phi)
     {
         Eigen::Matrix3d ans;
         double theta = phi.angle();
@@ -658,7 +702,7 @@ namespace Util
         return ans;
     }
 
-    Eigen::Matrix3d SO3JrightInv(const Eigen::AngleAxis<double> &phi)
+    inline Eigen::Matrix3d SO3JrightInv(const Eigen::AngleAxis<double> &phi)
     {
         Eigen::Matrix3d ans;
         double theta = phi.angle();
@@ -676,7 +720,7 @@ namespace Util
         return ans;
     }
 
-    Eigen::Matrix3d SO3Jleft(const Eigen::AngleAxis<double> &phi)
+    inline Eigen::Matrix3d SO3Jleft(const Eigen::AngleAxis<double> &phi)
     {
         Eigen::Matrix3d ans;
         double theta = phi.angle();
@@ -694,7 +738,7 @@ namespace Util
         return ans;
     }
 
-    Eigen::Matrix3d SO3JleftInv(const Eigen::AngleAxis<double> &phi)
+    inline Eigen::Matrix3d SO3JleftInv(const Eigen::AngleAxis<double> &phi)
     {
         Eigen::Matrix3d ans;
         double theta = phi.angle();
@@ -712,7 +756,7 @@ namespace Util
         return ans;
     }
 
-    Eigen::Matrix3d YPR2Rot(Eigen::Vector3d ypr)
+    inline Eigen::Matrix3d YPR2Rot(Eigen::Vector3d ypr)
     {
         double y = ypr(0) / 180.0 * M_PI;
         double p = ypr(1) / 180.0 * M_PI;
@@ -736,7 +780,7 @@ namespace Util
         return Rz * Ry * Rx;
     }
 
-    Eigen::Matrix3d YPR2Rot(double yaw, double pitch, double roll)
+    inline Eigen::Matrix3d YPR2Rot(double yaw, double pitch, double roll)
     {
         double y = yaw / 180.0 * M_PI;
         double p = pitch / 180.0 * M_PI;
@@ -760,7 +804,7 @@ namespace Util
         return Rz * Ry * Rx;
     }
 
-    Eigen::Vector3d Rot2YPR(const Eigen::Matrix3d R)
+    inline Eigen::Vector3d Rot2YPR(const Eigen::Matrix3d R)
     {
         Eigen::Vector3d n = R.col(0);
         Eigen::Vector3d o = R.col(1);
@@ -777,34 +821,70 @@ namespace Util
         return ypr / M_PI * 180.0;
     }
 
-    Eigen::Vector3d Quat2YPR(const Eigen::Quaterniond Q)
+    inline Eigen::Vector3d Quat2YPR(const Eigen::Quaterniond Q)
     {
         return Rot2YPR(Q.toRotationMatrix());
     }
 
-    Eigen::Vector3d Quat2YPR(double qx, double qy, double qz, double qw)
+    inline Eigen::Vector3d Quat2YPR(double qx, double qy, double qz, double qw)
     {
         return Rot2YPR(Quaternd(qw, qx, qy, qz).toRotationMatrix());
     }
 
-    Eigen::Quaterniond YPR2Quat(Eigen::Vector3d ypr)
+    inline Eigen::Quaterniond YPR2Quat(Eigen::Vector3d ypr)
     {
         return Quaterniond(YPR2Rot(ypr));
     }
 
-    Eigen::Quaterniond YPR2Quat(double y, double p, double r)
+    inline Eigen::Quaterniond YPR2Quat(double y, double p, double r)
     {
         return Quaterniond(YPR2Rot(y, p, r));
     }
 
-    Vector3d transform_pointVec(const mytf &tf, const PointXYZI &pi)
+    // Finding the roll and pitch from gravity reading.
+    inline Eigen::Matrix3d grav2Rot(const Eigen::Vector3d &g)
+    {
+        Eigen::Matrix3d R0;
+        Eigen::Vector3d ng1 = g.normalized();
+        Eigen::Vector3d ng2{0, 0, 1.0};
+        R0 = Eigen::Quaterniond::FromTwoVectors(ng1, ng2).toRotationMatrix();
+        double yaw = Util::Rot2YPR(R0).x();
+        R0 = Util::YPR2Rot(Eigen::Vector3d(-yaw, 0, 0)) * R0;
+        // R0 = Util::ypr2R(Eigen::Vector3d{-90, 0, 0}) * R0;
+        return R0;
+
+        // // Get z axis, which alines with -g (z_in_G=0,0,1)
+        // Eigen::Vector3d z_axis = g / g.norm();
+
+        // // Create an x_axis
+        // Eigen::Vector3d e_1(1, 0, 0);
+
+        // // Make x_axis perpendicular to z
+        // Eigen::Vector3d x_axis = e_1 - z_axis * z_axis.transpose() * e_1;
+        // x_axis = x_axis / x_axis.norm();
+
+        // // Get z from the cross product of these two
+        // Eigen::Matrix<double, 3, 1> y_axis = Util::skewSymmetric(z_axis) * x_axis;
+
+        // // From these axes get rotation
+        // Eigen::Matrix<double, 3, 3> Ro;
+        // Ro.block(0, 0, 3, 1) = x_axis;
+        // Ro.block(0, 1, 3, 1) = y_axis;
+        // Ro.block(0, 2, 3, 1) = z_axis;
+
+        // // Eigen::Quaterniond q0(Ro);
+        // // q0.normalize();
+        // return Ro;
+    }
+
+    inline Vector3d transform_pointVec(const mytf &tf, const PointXYZI &pi)
     {
         Vector3d bodyPoint = tf.rot * Vector3d(pi.x, pi.y, pi.z) + tf.pos;
         return bodyPoint;
     }
 
     template <typename PointT>
-    PointT transform_point(const mytf &tf, const PointT &pi)
+    inline PointT transform_point(const mytf &tf, const PointT &pi)
     {
         Vector3d pos = tf.rot * Vector3d(pi.x, pi.y, pi.z) + tf.pos;
         
@@ -816,7 +896,7 @@ namespace Util
         return po;
     }
 
-    PointPose transform_point(const mytf &tf, const PointPose &pi)
+    inline PointPose transform_point(const mytf &tf, const PointPose &pi)
     {
         Vector3d pos = tf.rot * Vector3d(pi.x, pi.y, pi.z) + tf.pos;
         Quaternd rot = tf.rot * Quaternd(pi.qw, pi.qx, pi.qy, pi.qz);
@@ -835,7 +915,7 @@ namespace Util
         return po;
     }
 
-    PointXYZI Extract3DFrom6D(const PointPose &p6D)
+    inline PointXYZI Extract3DFrom6D(const PointPose &p6D)
     {
         PointXYZI p3D;
 
@@ -848,7 +928,7 @@ namespace Util
     }
 
     template <typename PointT>
-    bool PointIsValid(const PointT &p)
+    inline bool PointIsValid(const PointT &p)
     {
         return (std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z)
                 && !std::isnan(p.x) && !std::isnan(p.y) && !std::isnan(p.z));
@@ -873,7 +953,7 @@ namespace Util
     }
 
     template <typename T>
-    T normalizeAngle(const T& angle_degrees) {
+    inline T normalizeAngle(const T& angle_degrees) {
       T two_pi(2.0 * 180);
       if (angle_degrees > 0)
       return angle_degrees -
@@ -882,6 +962,82 @@ namespace Util
         return angle_degrees +
             two_pi * std::floor((-angle_degrees + T(180)) / two_pi);
     };
+
+    template <typename CloudType>
+    inline bool fitPlane(CloudType &points, double rho_min, double thres, Vector4d &pca_result, double &rho)
+    {
+        int N = points.size();
+
+        Vector3d S(0, 0, 0);
+        Matrix<double, 3, 3> C = Matrix<double, 3, 3>::Zero();
+
+        for (int j = 0; j < N; j++)
+        {
+            Vector3d f(points[j].x, points[j].y, points[j].z);
+            S = S + f;
+            C = C + f*f.transpose();
+        }
+
+        C -= 1.0/N*S*S.transpose();
+
+        Vector3d mu = S/N;
+        MatrixXd Gamma = 1.0/(N - 1)*C;
+
+        // Calculate eigenvalues and eigenvectors
+        Eigen::SelfAdjointEigenSolver<Matrix<double, 3, 3>> solver(Gamma);
+
+        // Get eigenvalues and eigenvectors
+        Vector3d lambdas = solver.eigenvalues();
+        Matrix<double, 3, 3> nus = solver.eigenvectors();
+
+        // cout << "lambda:\n" << lambdas << endl;
+        // cout << "nus:\n" << nus << endl;
+
+        // Planarity
+        rho = (lambdas(1) - lambdas(0))/(lambdas(0) + lambdas(1) + lambdas(2))*2.0;
+
+        if (rho < rho_min)
+            return false;
+
+        Vector3d norm = nus.block<3, 1>(0, 0);
+        pca_result(0) = norm(0);
+        pca_result(1) = norm(1);
+        pca_result(2) = norm(2);
+        pca_result(3) = -mu.dot(norm);
+
+        for (int j = 0; j < N; j++)
+            if (fabs(pca_result(0) * points[j].x + pca_result(1) * points[j].y + pca_result(2) * points[j].z + pca_result(3)) > thres)
+                return false;
+
+        return true;
+
+        // MatrixXd A(NUM_MATCH_POINTS, 3);
+        // MatrixXd b(NUM_MATCH_POINTS, 1);
+        // A.setZero();
+        // b.setOnes();
+        // b *= -1.0f;
+
+        // for (int j = 0; j < NUM_MATCH_POINTS; j++)
+        // {
+        //     A(j,0) = point[j].x;
+        //     A(j,1) = point[j].y;
+        //     A(j,2) = point[j].z;
+        // }
+
+        // Matrix<double, 3, 1> normal = A.colPivHouseholderQr().solve(b);
+
+        // double nnorm = normal.norm();
+        // pca_result(0) = normal(0) / nnorm;
+        // pca_result(1) = normal(1) / nnorm;
+        // pca_result(2) = normal(2) / nnorm;
+        // pca_result(3) = 1.0 / nnorm;
+
+        // for (int j = 0; j < NUM_MATCH_POINTS; j++)
+        //     if (fabs(pca_result(0) * point[j].x + pca_result(1) * point[j].y + pca_result(2) * point[j].z + pca_result(3)) > thres)
+        //         return false;
+
+        // return true;
+    }
 
 }; // namespace Util
 
