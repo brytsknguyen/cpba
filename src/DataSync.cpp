@@ -35,9 +35,9 @@ struct SyncedData
     cloudMsg cloud_data;
 };
 
-deque<odomMsg> atag_data;
-deque<odomMsg> odom_data;
-deque<cloudMsg> cloud_data;
+deque<odomMsg> atag_buffer;
+deque<odomMsg> odom_buffer;
+deque<cloudMsg> cloud_buffer;
 deque<SyncedData> synchronized_data;
 
 
@@ -77,7 +77,7 @@ int main(int argc, char **argv)
             // ROS_INFO("Topic: %s. Time: %f", m.getTopic().c_str(), msg->header.stamp.toSec());
 
             // Store tag data
-            atag_data.push_back(msg);
+            atag_buffer.push_back(msg);
         }
 
         if (m.getTopic() == "/Odometry")
@@ -91,7 +91,7 @@ int main(int argc, char **argv)
             // ROS_INFO("Topic: %s. Time: %f", m.getTopic().c_str(), msg->header.stamp.toSec());
 
             // April tag data
-            odom_data.push_back(msg);
+            odom_buffer.push_back(msg);
         }
 
         if (m.getTopic() == "/cloud_registered")
@@ -104,20 +104,20 @@ int main(int argc, char **argv)
             // ROS_INFO("Topic: %s. Time: %f", m.getTopic().c_str(), msg->header.stamp.toSec());
 
             // April tag data
-            cloud_data.push_back(msg);
+            cloud_buffer.push_back(msg);
         }
     }
 
     // Associate the odom with the closest tag data
-    for(int i = 0; i < odom_data.size(); i++)
+    for(int i = 0; i < odom_buffer.size(); i++)
     {
-        double t_odom = odom_data[i]->header.stamp.toSec();
+        double t_odom = odom_buffer[i]->header.stamp.toSec();
         
         double min_atag_tdiff = -1;
         int closest_atag_idx = -1;
-        for(int j = 0; j < atag_data.size(); j++)
+        for(int j = 0; j < atag_buffer.size(); j++)
         {
-            double t_atag = atag_data[j]->header.stamp.toSec();
+            double t_atag = atag_buffer[j]->header.stamp.toSec();
             double time_diff = t_odom - t_atag;
 
             if (closest_atag_idx == -1 || fabs(time_diff) < min_atag_tdiff)
@@ -132,13 +132,13 @@ int main(int argc, char **argv)
         }
         odomMsg tag_data = nullptr;    
         if (closest_atag_idx != -1 && min_atag_tdiff < tag_time_tolerance)
-            tag_data = atag_data[closest_atag_idx];
+            tag_data = atag_buffer[closest_atag_idx];
 
         double min_cloud_tdiff = -1;
         int closest_cloud_idx = -1;
-        for(int j = 0; j < cloud_data.size(); j++)
+        for(int j = 0; j < cloud_buffer.size(); j++)
         {
-            double t_cloud = cloud_data[j]->header.stamp.toSec();
+            double t_cloud = cloud_buffer[j]->header.stamp.toSec();
             double time_diff = t_odom - t_cloud;
 
             if (closest_cloud_idx == -1 || fabs(time_diff) < min_cloud_tdiff)
@@ -153,10 +153,10 @@ int main(int argc, char **argv)
         }
         cloudMsg pc_data = nullptr;
         if (closest_cloud_idx != -1 && min_cloud_tdiff < 0.01)
-            pc_data = cloud_data[closest_cloud_idx];    
+            pc_data = cloud_buffer[closest_cloud_idx];    
 
         SyncedData synced_data;
-        synced_data.odom_data  = odom_data[i];
+        synced_data.odom_data  = odom_buffer[i];
         synced_data.atag_data  = tag_data;
         synced_data.cloud_data = pc_data;
         synchronized_data.push_back(synced_data);
@@ -164,13 +164,17 @@ int main(int argc, char **argv)
         if (tag_data != nullptr && pc_data != nullptr)
             printf("odom time %f. Sync: %f, %f\n", t_odom, min_atag_tdiff, min_cloud_tdiff);
     }
+    
+    // Clear the buffers to free the space
+    odom_buffer.clear();
+    atag_buffer.clear();
 
     ros::Publisher odom_pub  = nh.advertise<nav_msgs::Odometry>("/odom", 100);
     ros::Publisher atag_pub  = nh.advertise<nav_msgs::Odometry>("/atag_inW", 100);
     ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud", 100);
-
     static tf::TransformBroadcaster tfbr;
 
+    // Publish the synchronized data for visualization
     printf("Pairs: %d. SyncCount: %d\n", synchronized_data.size());
     for(int i = 0; i < synchronized_data.size(); i++)
     {
