@@ -54,6 +54,9 @@ int main(int argc, char **argv)
     string bag_file;
     nh_ptr->param("bag_file", bag_file, string(""));
     printf("Openning bag file: %s\n", bag_file.c_str());
+
+    double tag_time_tolerance;
+    nh_ptr->param("tag_time_tolerance", tag_time_tolerance, 0.05);
     
     rosbag::Bag bag;
     bag.open(bag_file, rosbag::bagmode::Read);
@@ -127,6 +130,9 @@ int main(int argc, char **argv)
             if (time_diff < -1.0)
                 break;
         }
+        odomMsg tag_data = nullptr;    
+        if (closest_atag_idx != -1 && min_atag_tdiff < tag_time_tolerance)
+            tag_data = atag_data[closest_atag_idx];
 
         double min_cloud_tdiff = -1;
         int closest_cloud_idx = -1;
@@ -145,13 +151,8 @@ int main(int argc, char **argv)
             if (time_diff < -1.0)
                 break;
         }
-
-        odomMsg tag_data = nullptr;    
-        if (closest_atag_idx != -1 && min_atag_tdiff < 0.05)
-            tag_data = atag_data[closest_atag_idx];
-
         cloudMsg pc_data = nullptr;
-        if (closest_cloud_idx != -1 && min_cloud_tdiff < 0.05)
+        if (closest_cloud_idx != -1 && min_cloud_tdiff < 0.01)
             pc_data = cloud_data[closest_cloud_idx];    
 
         SyncedData synced_data;
@@ -159,10 +160,13 @@ int main(int argc, char **argv)
         synced_data.atag_data  = tag_data;
         synced_data.cloud_data = pc_data;
         synchronized_data.push_back(synced_data);
+
+        if (tag_data != nullptr && pc_data != nullptr)
+            printf("odom time %f. Sync: %f, %f\n", t_odom, min_atag_tdiff, min_cloud_tdiff);
     }
 
-    ros::Publisher odom_pub = nh.advertise<nav_msgs::Odometry>("/odom", 100);
-    ros::Publisher atag_pub = nh.advertise<nav_msgs::Odometry>("/atag_inW", 100);
+    ros::Publisher odom_pub  = nh.advertise<nav_msgs::Odometry>("/odom", 100);
+    ros::Publisher atag_pub  = nh.advertise<nav_msgs::Odometry>("/atag_inW", 100);
     ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud", 100);
 
     static tf::TransformBroadcaster tfbr;
@@ -170,7 +174,7 @@ int main(int argc, char **argv)
     printf("Pairs: %d. SyncCount: %d\n", synchronized_data.size());
     for(int i = 0; i < synchronized_data.size(); i++)
     {
-        auto odom_data = synchronized_data[i].odom_data;
+        odomMsg odom_data = synchronized_data[i].odom_data;
         myTf tf_W_B(*odom_data);
 
         if (odom_data != nullptr)
@@ -183,13 +187,26 @@ int main(int argc, char **argv)
             tfbr.sendTransform(tf::StampedTransform(transform, odom_data->header.stamp, odom_data->header.frame_id, odom_data->child_frame_id));
         }
 
-        auto atag_data = synchronized_data[i].odom_data;
+        odomMsg atag_data = synchronized_data[i].atag_data;
         if (synchronized_data[i].atag_data != nullptr)
         {
-            // transform the atag data into world frame
             myTf tf_B_T(*atag_data);
-            myTf tf_W_T = tf_W_B*tf_B_T;
+            myTf tf_x_z(Util::YPR2Quat(Vector3d(0, 90, 0)), Vector3d(0, 0, 0));
+
+            printf("Tag pose: %9.3f, %9.3f, %9.3f. Time diff: %6.3f\n",
+                    atag_data->pose.pose.position.x,
+                    atag_data->pose.pose.position.y,
+                    atag_data->pose.pose.position.z,
+                   (atag_data->header.stamp - odom_data->header.stamp).toSec());
+
+            // transform the atag data into world frame
+            myTf tf_W_T = tf_W_B*tf_B_T*tf_x_z;
+            
             nav_msgs::Odometry tagInW = *atag_data;
+
+            tagInW.header.frame_id = "world";
+            tagInW.child_frame_id = "tag";
+
             tagInW.pose.pose.position.x = tf_W_T.pos(0);
             tagInW.pose.pose.position.y = tf_W_T.pos(1);
             tagInW.pose.pose.position.z = tf_W_T.pos(2);
@@ -203,7 +220,7 @@ int main(int argc, char **argv)
             // Also broadcast a tf for easy viewing
         }
 
-        auto cloud_data = synchronized_data[i].cloud_data;
+        cloudMsg cloud_data = synchronized_data[i].cloud_data;
         if (cloud_data != nullptr)
             cloud_pub.publish(*cloud_data);
 

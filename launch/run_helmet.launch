@@ -36,4 +36,7 @@
     <!-- Launch the rviz node-->
     <node pkg="rviz" type="rviz" name="rviz_cpba" args="-d $(find cpba)/launch/helmet.rviz" />
 
+    <node pkg="tf2_ros" type="static_transform_publisher"
+          name="lidar_tag_pub" args="0 0 0 0 0 0 1 lidar_frame body" />  
+
 </launch>

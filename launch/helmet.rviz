@@ -4,8 +4,8 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /Optimization1
-        - /Optimization1/TagInW1
+        - /DataCollection1
+        - /DataCollection1/Odometry2
         - /Optimization1/TagInW1/Shape1
       Splitter Ratio: 0.5
     Tree Height: 419
@@ -110,7 +110,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: Intensity
           Decay Time: 0
-          Enabled: true
+          Enabled: false
           Invert Rainbow: true
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -125,7 +125,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -138,7 +138,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: Intensity
           Decay Time: 500
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -153,16 +153,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
-        - Alpha: 1
-          Class: rviz/Axes
-          Enabled: true
-          Length: 2
-          Name: Axes
-          Radius: 0.05000000074505806
-          Reference Frame: <Fixed Frame>
-          Show Trail: false
-          Value: true
+          Value: false
         - Class: rviz/Image
           Enabled: true
           Image Topic: /usb_cam/image_raw
@@ -173,6 +164,41 @@ Visualization Manager:
           Normalize Range: true
           Queue Size: 2
           Transport Hint: raw
+          Unreliable: false
+          Value: true
+        - Angle Tolerance: 0
+          Class: rviz/Odometry
+          Covariance:
+            Orientation:
+              Alpha: 0.5
+              Color: 255; 255; 127
+              Color Style: Unique
+              Frame: Local
+              Offset: 1
+              Scale: 1
+              Value: true
+            Position:
+              Alpha: 0.30000001192092896
+              Color: 204; 51; 204
+              Scale: 1
+              Value: true
+            Value: true
+          Enabled: true
+          Keep: 1
+          Name: Odometry
+          Position Tolerance: 0
+          Queue Size: 1
+          Shape:
+            Alpha: 1
+            Axes Length: 3
+            Axes Radius: 0.05000000074505806
+            Color: 255; 25; 0
+            Head Length: 0.30000001192092896
+            Head Radius: 0.10000000149011612
+            Shaft Length: 1
+            Shaft Radius: 0.05000000074505806
+            Value: Axes
+          Topic: /tag_pose
           Unreliable: false
           Value: true
       Enabled: true
@@ -335,7 +361,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 16.432096481323242
+      Distance: 10
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -343,17 +369,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -60.02363204956055
-        Y: 10.562531471252441
-        Z: 3.3706395626068115
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.45979684591293335
-      Target Frame: world
-      Yaw: 3.0490405559539795
+      Pitch: 0.5403984189033508
+      Target Frame: body
+      Yaw: 0.8253981471061707
     Saved: ~
 Window Geometry:
   Displays:

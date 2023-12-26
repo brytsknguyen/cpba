@@ -4,7 +4,8 @@
 
     <!-- Optimization node -->
     <node pkg="cpba" type="cpba_datasync" name="cpba_datasync" output="screen" >
-        <param name="bag_file" type="string"  value="$(arg bag_file)"/>
+        <param name="bag_file"           type="string" value="$(arg bag_file)"/>
+        <param name="tag_time_tolerance" type="double" value="0.02"/>
     </node>
     
     <!-- Launch the rviz node-->
